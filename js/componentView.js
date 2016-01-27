@@ -1,5 +1,6 @@
 var container
 var camera, control, orbit, scene, renderer, stl_loader, gui, rightpanel, subprops, componentName;
+var actuators, mechanicalAct, physical, vUIactuators, sensors, eSensing, vUIsensors
 var subcomponents = []
       
 var raycaster = new THREE.Raycaster();
@@ -10,6 +11,57 @@ INTERSECTED, SELECTED;
 componentName = window.prompt("Name the component", "");
 init();
 render();
+
+function getComponents()
+{
+    pico.load("interface", function(module){
+	module.components(["actuator","mechanical"],function(response){
+            for(i = 0; i < response.length; i++){
+                var button = {
+                    add: function(){
+                    }
+                }
+                mechanicalAct.add(button,"add").name(response[i][0]);
+            }
+        });
+	module.components(["actuator","device"],function(response){
+            for(i = 0; i < response.length; i++){
+                var button = {
+                    add: function(){
+                    }
+                }
+                physical.add(button,"add").name(response[i][0]);
+            }
+        });
+	module.components(["actuator","UI"],function(response){
+	    for(i = 0; i < response.length; i++){
+		var button = {
+		    add: function(){			
+		    }
+		}
+		vUIactuators.add(button,"add").name(response[i][0]);
+	    }	    
+	});
+	module.components(["sensor","device"],function(response){
+            for(i = 0; i < response.length; i++){
+                var button = {
+                    add: function(){
+                    }
+                }
+                eSensing.add(button,"add").name(response[i][0]);
+            }
+        });
+	module.components(["sensor","UI"],function(response){
+            for(i = 0; i < response.length; i++){
+                var button = {
+                    add: function(){
+                    }
+                }
+                vUIsensors.add(button,"add").name(response[i][0]);
+            }
+        });
+    });
+}
 
 function init(){
     container = document.getElementById('componentView');
@@ -30,6 +82,7 @@ function init(){
     control.addEventListener( 'change', render );
     orbit = new THREE.OrbitControls( camera, renderer.domElement );
     loadGui();
+    getComponents();
     renderer.domElement.addEventListener( 'mousemove', onDocumentMouseMove, false );
     renderer.domElement.addEventListener( 'mousedown', onDocumentMouseDown, false );
     renderer.domElement.addEventListener( 'mouseup', onDocumentMouseUp, false );
@@ -47,7 +100,7 @@ function loadGui() {
 	Electrical: true,
 	Software: true
     };
-    gui = new dat.GUI({ autoPlace: false, width: document.getElementById('left-panel').clientWidth });
+    gui = new dat.GUI({ autoPlace: false, width: document.getElementById('left-panel').clientWidth, scrollable: true });
     gui.domElement.removeChild(gui.__closeButton);
     document.getElementById('left-panel').appendChild(gui.domElement);
     gui.add(search, "Search");
@@ -57,6 +110,8 @@ function loadGui() {
     searchFilters.add(filters, "Software");
     componentsFolder = gui.addFolder('Components');
     componentsFolder.open();
+    actuators = componentsFolder.addFolder("Actuators");
+    sensors = componentsFolder.addFolder("Sensors");
     var obj_load_button = {
 	add:function(){
 	    stl_loader.load('models/seg.stl',function(geometry){
@@ -79,12 +134,14 @@ function loadGui() {
 	    });
 	}
     }
-    mechanicalComps = componentsFolder.addFolder("Mechanical");
-    electricalComps = componentsFolder.addFolder("Electrical");
-    softwareComps = componentsFolder.addFolder("Software")
-    mechanicalComps.add(obj_load_button,"add").name("SegBase");
-    mechanicalComps.add(finger_load_button,"add").name("Finger");
-    rightpanel = new dat.GUI({ autoPlace: false, width: document.getElementById('right-panel').clientWidth });
+    mechanicalAct = actuators.addFolder("Mechanical Actuators");
+    physical = actuators.addFolder("Physical Interface Devices");
+    vUIactuators = actuators.addFolder("Virtual UI Widgets")
+    mechanicalAct.add(obj_load_button,"add").name("SegBase");
+    mechanicalAct.add(finger_load_button,"add").name("Finger");
+    eSensing = sensors.addFolder("Environmental Sensing");
+    vUIsensors = sensors.addFolder("Virtual UI Widgets");
+    rightpanel = new dat.GUI({ autoPlace: false, width: document.getElementById('right-panel').clientWidth, scrollable: true });
     rightpanel.domElement.removeChild(rightpanel.__closeButton);
     document.getElementById('right-panel').appendChild(rightpanel.domElement);
     comp = rightpanel.addFolder(componentName);
