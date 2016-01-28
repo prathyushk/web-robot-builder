@@ -1,7 +1,7 @@
 import pico.server
-import sys
+import sys, os
 sys.stdout = sys.stderr # sys.stdout access restricted by mod_wsgi
-path = '/var/www/html/' # the modules you want to be usable by Pico
+path = os.path.dirname(os.path.realpath(__file__)) + "/py" # the modules you want to be usable by Pico
 if path not in sys.path:
     sys.path.insert(0, path)
 
