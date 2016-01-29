@@ -1,7 +1,8 @@
 var container
 var camera, control, orbit, scene, renderer, stl_loader, gui, rightpanel, subprops, componentName;
-var actuators, mechanicalAct, physical, vUIactuators, sensors, eSensing, vUIsensors
 var subcomponents = []
+var componentLibrary = {};
+var componentMenus = {};
       
 var raycaster = new THREE.Raycaster();
 var mouse = new THREE.Vector2(),
@@ -12,54 +13,59 @@ componentName = window.prompt("Name the component", "");
 init();
 render();
 
+function UrlExists(url)
+{
+    var http = new XMLHttpRequest();
+    http.open('HEAD', url, false);
+    http.send();
+    return http.status!=404;
+}
+
+function onLoadSTL(geometry){
+    var n = window.prompt("Subcomponent Name","");
+    var material = new THREE.MeshPhongMaterial( { color:0xffffff, shading: THREE.FlatShading } );
+    var obj = new THREE.Mesh(geometry,material);
+    obj.name = n;
+    obj.className = compName;
+    obj.interfaces = {};
+    picoModule.getParameters(compName,function(response){
+	console.log(response);
+	obj.parameters = response;
+    });
+    for(i in componentLibrary[obj.className].interfaces){
+	obj.interfaces[componentLibrary[obj.className].interfaces[i]] = "";
+    }
+    scene.add(obj);
+    subcomponents.push(obj);
+}
+
+
 function getComponents()
 {
     pico.load("interface", function(module){
-	module.components(["actuator","mechanical"],function(response){
-            for(i = 0; i < response.length; i++){
-                var button = {
-                    add: function(){
-                    }
-                }
-                mechanicalAct.add(button,"add").name(response[i][0]);
-            }
-        });
-	module.components(["actuator","device"],function(response){
-            for(i = 0; i < response.length; i++){
-                var button = {
-                    add: function(){
-                    }
-                }
-                physical.add(button,"add").name(response[i][0]);
-            }
-        });
-	module.components(["actuator","UI"],function(response){
-	    for(i = 0; i < response.length; i++){
-		var button = {
-		    add: function(){			
+	picoModule = module;
+	for(var key in componentMenus){
+	    module.components([key],function(response){
+		var k = response[0];
+		for(i = 1; i < response.length; i++){
+		    componentLibrary[response[i][0]] = { interfaces: response[i][1] };
+		    var button = {
+			compName: response[i][0],
+			add: function(){
+			    compName = this.compName;
+			    if(UrlExists("models/" + this.compName + "/graph-model.stl"))
+				stl_loader.load('models/' + this.compName + '/graph-model.stl',onLoadSTL);
+			    else
+				module.generate_stl(this.compName,function(response){
+				    if(response)
+					stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);
+				});
+			}
 		    }
+		    componentMenus[k].add(button,"add").name(response[i][0]);
 		}
-		vUIactuators.add(button,"add").name(response[i][0]);
-	    }	    
-	});
-	module.components(["sensor","device"],function(response){
-            for(i = 0; i < response.length; i++){
-                var button = {
-                    add: function(){
-                    }
-                }
-                eSensing.add(button,"add").name(response[i][0]);
-            }
-        });
-	module.components(["sensor","UI"],function(response){
-            for(i = 0; i < response.length; i++){
-                var button = {
-                    add: function(){
-                    }
-                }
-                vUIsensors.add(button,"add").name(response[i][0]);
-            }
-        });
+	    });
+	}
     });
 }
 
@@ -68,7 +74,6 @@ function init(){
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera( 75, container.clientWidth / container.clientHeight, 0.1, 100000 );
     stl_loader = new THREE.STLLoader();
-    
     renderer = new THREE.WebGLRenderer({alpha: true, antialias: true});
     renderer.setSize( container.clientWidth, container.clientHeight);
     renderer.setClearColor( 0x000000,0);
@@ -78,6 +83,16 @@ function init(){
     camera.position.set( 1000, 500, 1000 );
     camera.lookAt( new THREE.Vector3( 0, 200, 0 ) );
     
+    light = new THREE.DirectionalLight( 0xffffff );
+    light.position.set( 1, 1, 1 );
+    scene.add( light );
+
+    light = new THREE.DirectionalLight( 0x002288 );
+    light.position.set( -1, -1, -1 );
+    scene.add( light );
+
+    light = new THREE.AmbientLight( 0x222222 );
+    scene.add( light );
     control = new THREE.TransformControls( camera, renderer.domElement );
     control.addEventListener( 'change', render );
     orbit = new THREE.OrbitControls( camera, renderer.domElement );
@@ -110,37 +125,11 @@ function loadGui() {
     searchFilters.add(filters, "Software");
     componentsFolder = gui.addFolder('Components');
     componentsFolder.open();
-    actuators = componentsFolder.addFolder("Actuators");
-    sensors = componentsFolder.addFolder("Sensors");
-    var obj_load_button = {
-	add:function(){
-	    stl_loader.load('models/seg.stl',function(geometry){
-		geometry.name = window.prompt("Subcomponent Name","");
-		      material = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
-		var obj = new THREE.Mesh(geometry,material);
-		scene.add(obj);
-		subcomponents.push(obj);
-	    });
-	}
-    }
-    var finger_load_button = {
-	add: function(){
-	    stl_loader.load('models/finger.stl',function(geometry){
-		geometry.name = window.prompt("Subcomponent Name","");
-		material = new THREE.MeshBasicMaterial( { color: 0x0000ff } );
-		var obj = new THREE.Mesh(geometry,material);
-		scene.add(obj);
-		subcomponents.push(obj);
-	    });
-	}
-    }
-    mechanicalAct = actuators.addFolder("Mechanical Actuators");
-    physical = actuators.addFolder("Physical Interface Devices");
-    vUIactuators = actuators.addFolder("Virtual UI Widgets")
-    mechanicalAct.add(obj_load_button,"add").name("SegBase");
-    mechanicalAct.add(finger_load_button,"add").name("Finger");
-    eSensing = sensors.addFolder("Environmental Sensing");
-    vUIsensors = sensors.addFolder("Virtual UI Widgets");
+    componentMenus["mechanical"] = componentsFolder.addFolder("Mechanical");
+    componentMenus["device"] = componentsFolder.addFolder("Device");
+    componentMenus["actuator"] = componentsFolder.addFolder("Actuators");
+    componentMenus["sensor"] = componentsFolder.addFolder("Sensors");
+    componentMenus["UI"] = componentsFolder.addFolder("UI");
     rightpanel = new dat.GUI({ autoPlace: false, width: document.getElementById('right-panel').clientWidth, scrollable: true });
     rightpanel.domElement.removeChild(rightpanel.__closeButton);
     document.getElementById('right-panel').appendChild(rightpanel.domElement);
@@ -228,11 +217,31 @@ function onDocumentMouseDown( event ) {
 	control.attach(intersects[0].object);
 	scene.add(control);
 	rightpanel.removeFolder(SELECTED);
-	subprops = rightpanel.addFolder(intersects[0].object.geometry.name);
+	subprops = rightpanel.addFolder(intersects[0].object.name);
 	subprops.open();
-	subprops.addFolder("Constraints");
-	subprops.addFolder("Interfaces");
-	SELECTED = intersects[0].object.geometry.name;
+
+	var constrs = subprops.addFolder("Constraints");
+	for(i in intersects[0].object.parameters){
+	    var f = constrs.addFolder(i);
+	    var message = {
+		value: "",
+		function: ""
+	    }
+	    if(intersects[0].object.parameters[i] != null)
+		message.value = intersects[0].object.parameters[i];
+	    f.add(message,"value");
+	    f.add(message,"function");
+	}
+	var ints = subprops.addFolder("Interfaces");
+	for(i in intersects[0].object.interfaces){
+	    var message = {
+		text: intersects[0].object.interfaces[i]
+	    }
+	    ints.add(message,"text").name(i);
+	}
+	var string = "models/" + intersects[0].object.className + "/graph-print.svg";
+	document.getElementById('svg-view').src = string;
+	SELECTED = intersects[0].object.name;
     }
 }
 
