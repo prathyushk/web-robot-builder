@@ -22,6 +22,21 @@ while(componentName == "");
 init();
 render();
 
+function downloadSVG(){
+    if(UrlExists("models/" + componentName + "/graph-print.svg"))
+	window.open("models/" + componentName + "/graph-print.svg");
+}
+
+function downloadYaml(){
+    if(UrlExists("models/" + componentName + "/" + componentName +".yaml"))
+	window.open("models/" + componentName + "/" + componentName +".yaml");
+}
+
+function downloadModel(){
+    if(UrlExists("models/" + componentName + "/graph-model.stl"))
+        window.open("models/" + componentName + "/graph-model.stl");
+}
+
 function addConnection(){
     $("#dialog").dialog("close");
     var newConn = {};
@@ -167,6 +182,13 @@ function init(){
     window.addEventListener( 'keydown', onKeyDown);
 }
 
+function removeByName(array,name){
+    for(var i = 0, len = array.length; i < len; i++){
+        if(array[i].name == name)
+            array.splice(i,1);
+    }
+}
+
 function loadGui() {
     var search = {
 	Search: ""
@@ -200,6 +222,23 @@ function loadGui() {
     comp.subcomponents = comp.addFolder("Subcomponents");
     comp.connections = comp.addFolder("Connections");
     var objectbuttons = {
+	subcomponentDelete:function(){
+	    var delName = window.prompt("Name of subcomponent to delete","");
+	    if(delName == "")
+		return;
+	    for(var i = 0, len = subcomponents.length; i < len; i++){
+		if(subcomponents[i].name == delName){
+		    if(SELECTED == subcomponents[i].name){
+			control.detach(subcomponents[i].name);
+			SELECTED = undefined;
+		    }
+		    scene.remove(subcomponents[i]);
+		    subcomponents.splice(i,1);
+		}
+	    }
+	    removeByName(connectedSubcomponents,delName);
+	    comp.subcomponents.removeFolder(delName);
+	},
 	connectionAdd:function(){
 	    var joinedList = subcomponents.concat(connectedSubcomponents);
 	    for(i in joinedList){
@@ -215,6 +254,13 @@ function loadGui() {
 	    }
 	    $("#dialog").dialog("open");
 	},
+	connectionDelete:function(){
+	    var delName = window.prompt("Name of connection to delete","");
+	    if(delName == "")
+		return;
+	    removeByName(connections,delName);
+	    comp.connections.removeFolder(delName);
+	},
 	parameterAdd:function(){
 	    var fieldName = window.prompt("Parameter name","");
 	    if(fieldName == "")
@@ -225,10 +271,23 @@ function loadGui() {
 	    }
 	    parameters[fieldName] = "";
 	    comp.parameters.add(parameters, fieldName).name(fieldName);
+	},
+	parameterDelete:function(){
+	    var delName = window.prompt("Name of parameter to delete","");
+	    if(delName == "")
+		return;
+	    delete parameters[delName];
+	    for(var i = 2, len = comp.parameters.__controllers.length; i < len; i++){
+		if(comp.parameters.__controllers[i].__li.firstElementChild.firstElementChild.innerHTML == delName)
+		    comp.parameters.remove(comp.parameters.__controllers[i]);
+	    }
 	}
     }
+    comp.subcomponents.add(objectbuttons,'subcomponentDelete').name("Remove Subcomponent");
     comp.parameters.add(objectbuttons,'parameterAdd').name("Add Parameter");
+    comp.parameters.add(objectbuttons,'parameterDelete').name("Remove Parameter");
     comp.connections.add(objectbuttons,'connectionAdd').name("Add Connection");
+    comp.connections.add(objectbuttons,'connectionDelete').name("Remove Connection");
 }
 
 function stripObjects(list, strippedList){
@@ -252,21 +311,26 @@ function buildComponent(){
     thisComponent.parameters = parameters;
     thisComponent.connections = connections;
     picoModule.generateFromObj(thisComponent,function(response){
+	if(SELECTED != undefined){
+	    control.detach(SELECTED);
+	    SELECTED = undefined;
+	}
 	for(i in subcomponents){
-	    if(SELECTED)
-		control.detach(SELECTED);
 	    scene.remove(subcomponents[i]);
 	    connectedSubcomponents.push(subcomponents[i]);
 	    subcomponents.splice(i,1);
 	}
 	stl_loader.load('models/' + componentName + '/graph-model.stl',onComponentSTL);
 	document.getElementById('svg-view').src = 'models/' + componentName + '/graph-print.svg';
+	document.getElementById('dSVG').disabled = false;
+	document.getElementById('dYaml').disabled = false;
+	document.getElementById('dModel').disabled = false;
     });
 }
 
 function onKeyDown( event ) {
     switch ( event.keyCode ) {
-    case 81: // Q
+/*    case 81: // Q
 	control.setSpace( control.space === "local" ? "world" : "local" );
 	break;
     case 17: // Ctrl
@@ -292,7 +356,7 @@ function onKeyDown( event ) {
 	break;
     case 66: // B
 	buildComponent();
-	break;
+	break;*/
     }
 }
 

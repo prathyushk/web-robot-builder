@@ -66,4 +66,5 @@ def generateFromObj(obj):
                 argsDict[equalsSplit[0]] = ast.literal_eval(equalsSplit[1])
         c.addConnection((int1[0],int1[1]),(int2[0],int2[1]),**argsDict)
     c.makeOutput("/var/www/html/web-robot-builder/models/" + obj["name"],display=False,tree=False)
+    c.toYaml("/var/www/html/web-robot-builder/models/" + obj["name"] + "/"+obj["name"]+".yaml")
     return obj["name"]
