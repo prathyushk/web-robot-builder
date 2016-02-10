@@ -1,7 +1,6 @@
 import pico
 from svggen.library import filterComponents, getComponent
 from svggen.api.component import Component
-from svggen.api.ports import *
 import json
 import ast
 
@@ -27,7 +26,7 @@ def portLookup(v,c):
 def generateFromObj(obj):
     c = Component()
     for k,v in obj["parameters"].iteritems():
-        c.addParameter(k,int(v))
+        c.addParameter(k,ast.literal_eval(v.encode('ascii','ignore')))
     for i in obj["subcomponents"]:
         c.addSubcomponent(i["name"],i["className"])
         for k,v in i["parameters"].iteritems():

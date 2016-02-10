@@ -118,6 +118,7 @@ function onComponentSTL(geometry){
 
 function getComponents()
 {
+    pico.on_error = function(e){ window.alert(e.exception); }
     pico.load("interface", function(module){
 	picoModule = module;
 	for(var key in componentMenus){
@@ -315,10 +316,10 @@ function buildComponent(){
 	    control.detach(SELECTED);
 	    SELECTED = undefined;
 	}
-	for(i in subcomponents){
-	    scene.remove(subcomponents[i]);
-	    connectedSubcomponents.push(subcomponents[i]);
-	    subcomponents.splice(i,1);
+	while(subcomponents.length > 0){
+	    scene.remove(subcomponents[subcomponents.length-1]);
+	    connectedSubcomponents.push(subcomponents[subcomponents.length-1]);
+	    subcomponents.splice(subcomponents.length-1,1);
 	}
 	stl_loader.load('models/' + componentName + '/graph-model.stl',onComponentSTL);
 	document.getElementById('svg-view').src = 'models/' + componentName + '/graph-print.svg';
