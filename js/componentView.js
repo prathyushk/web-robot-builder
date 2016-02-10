@@ -14,7 +14,11 @@ offset = new THREE.Vector3(),
 INTERSECTED, SELECTED;
 
 $("#dialog").dialog({autoOpen: false});
-componentName = window.prompt("Name the component", "");
+componentName = ""
+do{
+    componentName = window.prompt("Name the component", "");
+}
+while(componentName == "");
 init();
 render();
 
@@ -22,6 +26,12 @@ function addConnection(){
     $("#dialog").dialog("close");
     var newConn = {};
     newConn.name = document.getElementById("connName").value;
+    for(var iter = 0, len = connections.length; iter < len; iter++){
+	if(connections[iter].name == newConn.name){
+	    window.alert('Connection with name "' + newConn.name + '" already exists');
+	    return;
+	}
+    }
     var i1Select = document.getElementById("interface1");
     var i2Select = document.getElementById("interface2");
     newConn.interface1 = i1Select.options[i1Select.selectedIndex].text;
@@ -43,6 +53,15 @@ function UrlExists(url)
 
 function onLoadSTL(geometry){
     var n = window.prompt("Subcomponent Name","");
+    if(n == "")
+	return;
+    var joined = subcomponents.concat(connectedSubcomponents);
+    for(var iter = 0,len=joined.length; iter < len; iter++){
+	if(joined[iter].name == n){
+	    window.alert('Subcomponent with name "' + n + '" already exists');
+	    return;
+	}
+    }
     var material = new THREE.MeshPhongMaterial( { color:0xffffff, shading: THREE.FlatShading } );
     var obj = new THREE.Mesh(geometry,material);
     obj.name = n;
@@ -71,9 +90,6 @@ function onLoadSTL(geometry){
     for(i in obj.interfaces){
 	var contr = ints.add(obj.interfaces,i)
 	contr.name(i);
-	contr.onFinishChange(function(value){
-	    console.log(value);
-	});
     }
 }
 
@@ -187,9 +203,7 @@ function loadGui() {
 	connectionAdd:function(){
 	    var joinedList = subcomponents.concat(connectedSubcomponents);
 	    for(i in joinedList){
-		console.log(joinedList[i].interfaces);
 		for(inter in joinedList[i].interfaces){
-		    console.log(joinedList[i].interfaces[inter]);
 		    var opt = document.createElement("option");
 		    var opt2 = document.createElement("option");
 		    var str = joinedList[i].name + "." + inter;
@@ -202,7 +216,13 @@ function loadGui() {
 	    $("#dialog").dialog("open");
 	},
 	parameterAdd:function(){
-	    fieldName = window.prompt("Parameter name","");
+	    var fieldName = window.prompt("Parameter name","");
+	    if(fieldName == "")
+		return;
+	    if(parameters[fieldName] != undefined){
+		window.alert('Parameter "' + fieldName + '" already exists');
+		return;
+	    }
 	    parameters[fieldName] = "";
 	    comp.parameters.add(parameters, fieldName).name(fieldName);
 	}
@@ -230,7 +250,6 @@ function buildComponent(){
     stripObjects(subcomponents,thisComponent.subcomponents);
     stripObjects(connectedSubcomponents,thisComponent.subcomponents);
     thisComponent.parameters = parameters;
-    thisComponent.interfaces = interfaces;
     thisComponent.connections = connections;
     picoModule.generateFromObj(thisComponent,function(response){
 	for(i in subcomponents){
