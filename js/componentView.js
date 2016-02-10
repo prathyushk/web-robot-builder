@@ -1,17 +1,37 @@
-var container
+var container;
 var camera, control, orbit, scene, renderer, stl_loader, gui, rightpanel, subprops, componentName;
-var subcomponents = []
+var subcomponents = [];
+var connectedSubcomponents = [];
+var componentObj;
 var componentLibrary = {};
 var componentMenus = {};
+var parameters = {};
+var connections = [];
       
 var raycaster = new THREE.Raycaster();
 var mouse = new THREE.Vector2(),
 offset = new THREE.Vector3(),
 INTERSECTED, SELECTED;
 
+$("#dialog").dialog({autoOpen: false});
 componentName = window.prompt("Name the component", "");
 init();
 render();
+
+function addConnection(){
+    $("#dialog").dialog("close");
+    var newConn = {};
+    newConn.name = document.getElementById("connName").value;
+    var i1Select = document.getElementById("interface1");
+    var i2Select = document.getElementById("interface2");
+    newConn.interface1 = i1Select.options[i1Select.selectedIndex].text;
+    newConn.interface2 = i2Select.options[i2Select.selectedIndex].text;
+    connections.push(newConn);
+    var folder = comp.connections.addFolder(newConn.name);
+    newConn.args = "";
+    folder.add(newConn,"interface2").name(newConn.interface1);
+    folder.add(newConn,"args");
+}
 
 function UrlExists(url)
 {
@@ -28,17 +48,42 @@ function onLoadSTL(geometry){
     obj.name = n;
     obj.className = compName;
     obj.interfaces = {};
+    obj.parameterfuncs = {};
+    subcomponents.push(obj);
+    comp.subcomponents[obj.name] = comp.subcomponents.addFolder(obj.name);
+    var constrs = comp.subcomponents[obj.name].addFolder("Constraints");
     picoModule.getParameters(compName,function(response){
-	console.log(response);
 	obj.parameters = response;
+	for(i in obj.parameters){
+	    var f = constrs.addFolder(i);
+	    if(obj.parameters[i] == null)
+		obj.parameters[i] = "";
+	    obj.parameterfuncs[i] = "";
+	    f.add(obj.parameters,i).name("Value");
+	    f.add(obj.parameterfuncs,i).name("Function");
+	}
     });
     for(i in componentLibrary[obj.className].interfaces){
-	obj.interfaces[componentLibrary[obj.className].interfaces[i]] = "";
+	obj.interfaces[componentLibrary[obj.className].interfaces[i]] = false;
     }
     scene.add(obj);
-    subcomponents.push(obj);
+    var ints = comp.subcomponents[obj.name].addFolder("Inherit Interfaces");
+    for(i in obj.interfaces){
+	var contr = ints.add(obj.interfaces,i)
+	contr.name(i);
+	contr.onFinishChange(function(value){
+	    console.log(value);
+	});
+    }
 }
 
+function onComponentSTL(geometry){
+    if(componentObj)
+	scene.remove(componentObj);
+    material = new THREE.MeshPhongMaterial( {color:0xffffff,shading:THREE.FlatShading});
+    componentObj = new THREE.Mesh(geometry,material);
+    scene.add(componentObj);
+}
 
 function getComponents()
 {
@@ -135,22 +180,69 @@ function loadGui() {
     document.getElementById('right-panel').appendChild(rightpanel.domElement);
     comp = rightpanel.addFolder(componentName);
     comp.open();
-    
-    parameters = comp.addFolder("Parameters");
-    interfaces = comp.addFolder("Interfaces");
-    var component = {
-	field:  "",
+    comp.parameters = comp.addFolder("Parameters");
+    comp.subcomponents = comp.addFolder("Subcomponents");
+    comp.connections = comp.addFolder("Connections");
+    var objectbuttons = {
+	connectionAdd:function(){
+	    var joinedList = subcomponents.concat(connectedSubcomponents);
+	    for(i in joinedList){
+		console.log(joinedList[i].interfaces);
+		for(inter in joinedList[i].interfaces){
+		    console.log(joinedList[i].interfaces[inter]);
+		    var opt = document.createElement("option");
+		    var opt2 = document.createElement("option");
+		    var str = joinedList[i].name + "." + inter;
+		    opt.val = str; opt2.val = str;
+		    opt.innerHTML = str; opt2.innerHTML = str;
+		    document.getElementById('interface1').appendChild(opt);
+		    document.getElementById('interface2').appendChild(opt2);
+		}
+	    }
+	    $("#dialog").dialog("open");
+	},
 	parameterAdd:function(){
 	    fieldName = window.prompt("Parameter name","");
-	    parameters.add(component, 'field').name(fieldName);
-	},
-	interfaceAdd:function(){
-	    fieldName = window.prompt("Interface name","");
-	    interfaces.add(component, 'field').name(fieldName);
+	    parameters[fieldName] = "";
+	    comp.parameters.add(parameters, fieldName).name(fieldName);
 	}
     }
-    parameters.add(component,'parameterAdd').name("Add Parameter");
-    interfaces.add(component,'interfaceAdd').name("Add Interface");
+    comp.parameters.add(objectbuttons,'parameterAdd').name("Add Parameter");
+    comp.connections.add(objectbuttons,'connectionAdd').name("Add Connection");
+}
+
+function stripObjects(list, strippedList){
+    for(i in list){
+	var strippedObj = {};
+	strippedObj.name = list[i].name;
+	strippedObj.className = list[i].className;
+	strippedObj.parameters = list[i].parameters;
+	strippedObj.parameterfuncs = list[i].parameterfuncs;
+	strippedObj.interfaces = list[i].interfaces;
+	strippedList.push(strippedObj);
+    }
+}
+
+function buildComponent(){
+    var thisComponent = {};
+    thisComponent.name = componentName;
+    thisComponent.subcomponents = [];
+    stripObjects(subcomponents,thisComponent.subcomponents);
+    stripObjects(connectedSubcomponents,thisComponent.subcomponents);
+    thisComponent.parameters = parameters;
+    thisComponent.interfaces = interfaces;
+    thisComponent.connections = connections;
+    picoModule.generateFromObj(thisComponent,function(response){
+	for(i in subcomponents){
+	    if(SELECTED)
+		control.detach(SELECTED);
+	    scene.remove(subcomponents[i]);
+	    connectedSubcomponents.push(subcomponents[i]);
+	    subcomponents.splice(i,1);
+	}
+	stl_loader.load('models/' + componentName + '/graph-model.stl',onComponentSTL);
+	document.getElementById('svg-view').src = 'models/' + componentName + '/graph-print.svg';
+    });
 }
 
 function onKeyDown( event ) {
@@ -178,6 +270,9 @@ function onKeyDown( event ) {
     case 189:
     case 109: // -, _, num-
 	control.setSize( Math.max( control.size - 0.1, 0.1 ) );
+	break;
+    case 66: // B
+	buildComponent();
 	break;
     }
 }
@@ -216,29 +311,10 @@ function onDocumentMouseDown( event ) {
     if ( intersects.length > 0 ) {
 	control.attach(intersects[0].object);
 	scene.add(control);
-	rightpanel.removeFolder(SELECTED);
-	subprops = rightpanel.addFolder(intersects[0].object.name);
-	subprops.open();
-
-	var constrs = subprops.addFolder("Constraints");
-	for(i in intersects[0].object.parameters){
-	    var f = constrs.addFolder(i);
-	    var message = {
-		value: "",
-		function: ""
-	    }
-	    if(intersects[0].object.parameters[i] != null)
-		message.value = intersects[0].object.parameters[i];
-	    f.add(message,"value");
-	    f.add(message,"function");
-	}
-	var ints = subprops.addFolder("Interfaces");
-	for(i in intersects[0].object.interfaces){
-	    var message = {
-		text: intersects[0].object.interfaces[i]
-	    }
-	    ints.add(message,"text").name(i);
-	}
+	comp.subcomponents.open();
+	if(SELECTED != undefined)
+		comp.subcomponents[SELECTED].close();
+	comp.subcomponents[intersects[0].object.name].open();
 	var string = "models/" + intersects[0].object.className + "/graph-print.svg";
 	document.getElementById('svg-view').src = string;
 	SELECTED = intersects[0].object.name;
