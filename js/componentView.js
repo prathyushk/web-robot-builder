@@ -7,11 +7,13 @@ var componentLibrary = {};
 var componentMenus = {};
 var parameters = {};
 var connections = [];
-      
+var tempParams = {};
+
 var raycaster = new THREE.Raycaster();
+raycaster.linePrecision = 3;
 var mouse = new THREE.Vector2(),
 offset = new THREE.Vector3(),
-INTERSECTED, SELECTED;
+SELECTED_2, SELECTED;
 
 $("#dialog").dialog({autoOpen: false});
 componentName = ""
@@ -21,6 +23,19 @@ do{
 while(componentName == "");
 init();
 render();
+
+function splitComponent()
+{
+    scene.remove(componentObj);
+    delete componentObj;
+    componentObj = undefined;
+    while(connectedSubcomponents.length > 0){
+            scene.add(connectedSubcomponents[connectedSubcomponents.length-1]);
+            subcomponents.push(connectedSubcomponents[connectedSubcomponents.length-1]);
+            connectedSubcomponents.splice(connectedSubcomponents.length-1,1);
+    }
+    document.getElementById("sComp").disabled = true;
+}
 
 function downloadSVG(){
     if(UrlExists("models/" + componentName + "/graph-print.svg"))
@@ -82,8 +97,26 @@ function onLoadSTL(geometry){
     obj.name = n;
     obj.className = compName;
     obj.interfaces = {};
+    obj.interfaceEdges = interfaceEdges;
     obj.parameterfuncs = {};
     subcomponents.push(obj);
+    for(i in interfaceEdges){
+	for(j in interfaceEdges[i]){
+	    if(interfaceEdges[i][j] == null)
+		continue;
+	    var material = new THREE.LineBasicMaterial({
+		color: 0xff0000
+	    });
+	    var geometry = new THREE.Geometry();
+	    geometry.vertices.push(
+		new THREE.Vector3( interfaceEdges[i][j][0][0], interfaceEdges[i][j][0][1], interfaceEdges[i][j][0][2] ),
+		new THREE.Vector3( interfaceEdges[i][j][1][0], interfaceEdges[i][j][1][1], interfaceEdges[i][j][1][2] )
+	    );
+	    var line = new THREE.Line( geometry, material );
+	    line.name = i;
+	    obj.add(line);
+	}
+    }
     comp.subcomponents[obj.name] = comp.subcomponents.addFolder(obj.name);
     var constrs = comp.subcomponents[obj.name].addFolder("Constraints");
     picoModule.getParameters(compName,function(response){
@@ -116,9 +149,37 @@ function onComponentSTL(geometry){
     scene.add(componentObj);
 }
 
+function handleError(e){
+    var ind = e.exception.search("Parameter ");
+    if(ind != -1){
+	var param = [];
+	if(e.exception.charAt(ind+10) == '[')
+	    param = eval(e.exception.substring(ind+10,e.exception.search(']')+1))
+	else{
+	    var strip = e.exception.substring(ind+10);
+	    param.push(strip.substring(0,strip.search(' ')));
+	}
+	for(var i = 0, len = param.length; i < len; i++){
+	    var val = window.prompt("Set value for parameter " + param[i]);
+	    if(val == "")
+		return;
+	    tempParams[param[i]] = parseInt(val);
+	}
+	var args = [compName,tempParams];
+        picoModule.generate_stl(args, function(response){
+            tempParams = {};
+	    console.log(response);
+	    interfaceEdges = response;
+            stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);
+        });
+    }
+    else
+	window.alert(e.exception);
+}
+
 function getComponents()
 {
-    pico.on_error = function(e){ window.alert(e.exception); }
+    pico.on_error = handleError;
     pico.load("interface", function(module){
 	picoModule = module;
 	for(var key in componentMenus){
@@ -130,13 +191,12 @@ function getComponents()
 			compName: response[i][0],
 			add: function(){
 			    compName = this.compName;
-			    if(UrlExists("models/" + this.compName + "/graph-model.stl"))
-				stl_loader.load('models/' + this.compName + '/graph-model.stl',onLoadSTL);
-			    else
-				module.generate_stl(this.compName,function(response){
-				    if(response)
-					stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);
-				});
+			    var args = [this.compName,tempParams];
+			    picoModule.generate_stl(args, function(response){
+				tempParams = {};
+				interfaceEdges = response;
+				stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);
+			    });
 			}
 		    }
 		    componentMenus[k].add(button,"add").name(response[i][0]);
@@ -185,8 +245,10 @@ function init(){
 
 function removeByName(array,name){
     for(var i = 0, len = array.length; i < len; i++){
-        if(array[i].name == name)
+        if(array[i].name == name){
             array.splice(i,1);
+	    break;
+	}
     }
 }
 
@@ -229,31 +291,52 @@ function loadGui() {
 		return;
 	    for(var i = 0, len = subcomponents.length; i < len; i++){
 		if(subcomponents[i].name == delName){
-		    if(SELECTED == subcomponents[i].name){
+		    if(SELECTED.name == subcomponents[i].name){
 			control.detach(subcomponents[i].name);
 			SELECTED = undefined;
 		    }
 		    scene.remove(subcomponents[i]);
 		    subcomponents.splice(i,1);
+		    break;
 		}
 	    }
 	    removeByName(connectedSubcomponents,delName);
 	    comp.subcomponents.removeFolder(delName);
 	},
 	connectionAdd:function(){
-	    var joinedList = subcomponents.concat(connectedSubcomponents);
-	    for(i in joinedList){
-		for(inter in joinedList[i].interfaces){
-		    var opt = document.createElement("option");
-		    var opt2 = document.createElement("option");
-		    var str = joinedList[i].name + "." + inter;
-		    opt.val = str; opt2.val = str;
-		    opt.innerHTML = str; opt2.innerHTML = str;
-		    document.getElementById('interface1').appendChild(opt);
-		    document.getElementById('interface2').appendChild(opt2);
+	    if(SELECTED != undefined && SELECTED_2 != undefined && SELECTED.parent != "Scene" && SELECTED_2.parent != "Scene")
+	    {
+		var newConn = {};
+		newConn.name = window.prompt("Connection Name: ");
+		for(var iter = 0, len = connections.length; iter < len; iter++){
+		    if(connections[iter].name == newConn.name){
+			window.alert('Connection with name "' + newConn.name + '" already exists');
+			return;
+		    }
 		}
+		newConn.interface1 = SELECTED.parent.name + "." + SELECTED.name;
+		newConn.interface2 = SELECTED_2.parent.name + "." + SELECTED_2.name;
+		connections.push(newConn);
+		var folder = comp.connections.addFolder(newConn.name);
+		newConn.args = "";
+		folder.add(newConn,"interface2").name(newConn.interface1);
+		folder.add(newConn,"args");
 	    }
-	    $("#dialog").dialog("open");
+	    else{
+		var joinedList = subcomponents.concat(connectedSubcomponents);
+		for(i in joinedList){
+		    for(inter in joinedList[i].interfaces){
+			var opt = document.createElement("option");
+			var opt2 = document.createElement("option");
+			var str = joinedList[i].name + "." + inter;
+			opt.val = str; opt2.val = str;
+			opt.innerHTML = str; opt2.innerHTML = str;
+			document.getElementById('interface1').appendChild(opt);
+			document.getElementById('interface2').appendChild(opt2);
+		    }
+		}
+		$("#dialog").dialog("open");
+	    }
 	},
 	connectionDelete:function(){
 	    var delName = window.prompt("Name of connection to delete","");
@@ -284,11 +367,11 @@ function loadGui() {
 	    }
 	}
     }
-    comp.subcomponents.add(objectbuttons,'subcomponentDelete').name("Remove Subcomponent");
-    comp.parameters.add(objectbuttons,'parameterAdd').name("Add Parameter");
-    comp.parameters.add(objectbuttons,'parameterDelete').name("Remove Parameter");
-    comp.connections.add(objectbuttons,'connectionAdd').name("Add Connection");
-    comp.connections.add(objectbuttons,'connectionDelete').name("Remove Connection");
+    comp.subcomponents.add(objectbuttons,'subcomponentDelete').name("Remove");
+    comp.parameters.add(objectbuttons,'parameterAdd').name("Add");
+    comp.parameters.add(objectbuttons,'parameterDelete').name("Remove");
+    comp.connections.add(objectbuttons,'connectionAdd').name("Add");
+    comp.connections.add(objectbuttons,'connectionDelete').name("Remove");
 }
 
 function stripObjects(list, strippedList){
@@ -326,6 +409,7 @@ function buildComponent(){
 	document.getElementById('dSVG').disabled = false;
 	document.getElementById('dYaml').disabled = false;
 	document.getElementById('dModel').disabled = false;
+	document.getElementById('sComp').disabled = false;
     });
 }
 
@@ -380,7 +464,10 @@ function onDocumentMouseMove( event ) {
     mouse.x = ( (event.clientX - getLeftPos(container))/ container.clientWidth ) * 2 - 1;
     mouse.y = - ( event.clientY / container.clientHeight ) * 2 + 1;
     raycaster.setFromCamera( mouse, camera );
-    var intersects = raycaster.intersectObjects( subcomponents );
+    var objs = subcomponents;
+    if(componentObj != undefined)
+	objs = subcomponents.concat(componentObj);
+    var intersects = raycaster.intersectObjects( objs,true );
     if ( intersects.length > 0 ) {
 	container.style.cursor = 'pointer';
     } else {
@@ -391,17 +478,47 @@ function onDocumentMouseMove( event ) {
 function onDocumentMouseDown( event ) {
     event.preventDefault();
     raycaster.setFromCamera( mouse, camera );
-    var intersects = raycaster.intersectObjects( subcomponents );
+    var objs = subcomponents;
+    if(componentObj != undefined)
+	objs = subcomponents.concat(componentObj);
+    var intersects = raycaster.intersectObjects( objs,true );
+    var obj;
+    if(!event.shiftKey)
+	obj = SELECTED;
+    else
+	obj = SELECTED_2;
     if ( intersects.length > 0 ) {
-	control.attach(intersects[0].object);
-	scene.add(control);
-	comp.subcomponents.open();
-	if(SELECTED != undefined)
-		comp.subcomponents[SELECTED].close();
-	comp.subcomponents[intersects[0].object.name].open();
-	var string = "models/" + intersects[0].object.className + "/graph-print.svg";
-	document.getElementById('svg-view').src = string;
-	SELECTED = intersects[0].object.name;
+	if(obj != undefined && obj.parent.type != "Scene")
+	    {
+		obj.material.color = new THREE.Color(0xff0000);
+		if(!event.shiftKey)
+		    SELECTED = undefined;
+		else
+		    SELECTED_2 = undefined;
+	    }
+	if(intersects[0].object.parent.type != "Scene"){
+	    intersects[0].object.material.color = new THREE.Color(0x00ff00);
+	    if(!event.shiftKey){
+		if(SELECTED != undefined && SELECTED.parent.type == "Scene")
+		    control.detach(SELECTED);
+		SELECTED = intersects[0].object;
+	    }
+	    else
+		SELECTED_2 = intersects[0].object;
+	}
+	else
+	{
+	    control.attach(intersects[0].object);
+	    scene.add(control);
+	    comp.subcomponents.open();
+	    if(SELECTED != undefined)
+		comp.subcomponents[SELECTED.name].close();
+	    if(SELECTED != componentObj)
+		comp.subcomponents[intersects[0].object.name].open();
+	    var string = "models/" + intersects[0].object.className + "/graph-print.svg";
+	    document.getElementById('svg-view').src = string;
+	    SELECTED = intersects[0].object;
+	}
     }
 }
 

@@ -1,6 +1,7 @@
 import pico
 from svggen.library import filterComponents, getComponent
 from svggen.api.component import Component
+from svggen.api.ports.EdgePort import *
 import json
 import ast
 
@@ -11,10 +12,30 @@ def components(filters=["actuator","mechanical"]):
         l.append(c)
     return l
 
-def generate_stl(name):
-    c = getComponent(name)
-    c.makeOutput("/var/www/html/web-robot-builder/models/" + name, testparams=True,display=False,tree=False)
-    return True
+def generate_stl(args):
+    name = args[0]
+    tempParams = args[1]
+    c = getComponent(name,**tempParams)
+    try:
+        c.makeOutput("/var/www/html/web-robot-builder/models/" + name, testparams=True,display=False,tree=False)
+    except:
+        try:
+            c.makeOutput("/var/www/html/web-robot-builder/models/" + name, testparams=False,display=False,tree=False)
+        except:
+            for k,v in c.parameters.iteritems():
+                if v is None:
+                    raise KeyError("Parameter %s not initialized on object" % k)
+    edgeNames = {}
+    for k,v in c.interfaces.iteritems():
+        obj = c.getInterface(k)
+        if isinstance(obj,EdgePort):
+            edgeNames[k] = {}
+            for i in obj.getEdges():
+                try:
+                    edgeNames[k][i] = c.composables['graph'].getEdge(i).pts3D
+                except:
+                    pass
+    return edgeNames
 
 def getParameters(className):
     c = getComponent(className)
@@ -26,29 +47,29 @@ def portLookup(v,c):
 def generateFromObj(obj):
     c = Component()
     for k,v in obj["parameters"].iteritems():
-        c.addParameter(k,ast.literal_eval(v.encode('ascii','ignore')))
+        c.addParameter(k,eval(v))
     for i in obj["subcomponents"]:
         c.addSubcomponent(i["name"],i["className"])
         for k,v in i["parameters"].iteritems():
             if v == '' or v is None:
                 continue
             try:
-                if isinstance(v, basestring):
-                    v = ast.literal_eval(v.encode('ascii','ignore'))
-                if isinstance(v, float) or isinstance(v, int):
-                    c.addConstConstraint((i["name"],k),v)
+                c.addConstConstraint((i["name"],k),eval(v))
             except:
-                v = v.split(',')
-                if(i["parameterfuncs"][k] != ''):
-                    if(len(v) > 1):
-                        c.addConstraint((i["name"],k),v,i["parameterfuncs"][k])
+                try:
+                    v = v.split(',')
+                    if(i["parameterfuncs"][k] != ''):
+                        if(len(v) > 1):
+                            c.addConstraint((i["name"],k),v,i["parameterfuncs"][k])
+                        else:
+                            c.addConstraint((i["name"],k),v[0],i["parameterfuncs"][k])
                     else:
-                        c.addConstraint((i["name"],k),v[0],i["parameterfuncs"][k])
-                else:
-                    if(len(v) > 1):
-                        c.addConstraint((i["name"],k),v)
-                    else:
-                        c.addConstraint((i["name"],k),v[0])
+                        if(len(v) > 1):
+                            c.addConstraint((i["name"],k),v)
+                        else:
+                            c.addConstraint((i["name"],k),v[0])
+                except:
+                    c.addConstConstraint((i["name"],k),v)
         for k,v in i["interfaces"].iteritems():
             if(v is None):
                 continue
