@@ -81,6 +81,13 @@ function UrlExists(url)
     return http.status!=404;
 }
 
+function loadSymbolic(obj){
+    for(var i = 0,len = obj["relations"].length; i < len; i++)
+	obj["relations"][i] = obj["relations"][i].replaceAll("**","^");
+    nupe = obj;
+    console.log(solveSystem(obj["relations"],obj["defaults"]));
+}
+
 function onLoadSTL(geometry){
     var n = window.prompt("Subcomponent Name","");
     if(n == "")
@@ -192,10 +199,11 @@ function getComponents()
 			add: function(){
 			    compName = this.compName;
 			    var args = [this.compName,tempParams];
-			    picoModule.generate_stl(args, function(response){
+			    picoModule.getSymbolic(args, function(response){
 				tempParams = {};
-				interfaceEdges = response;
-				stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);
+				loadSymbolic(response);
+				/*interfaceEdges = response;
+				stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);*/
 			    });
 			}
 		    }
@@ -542,3 +550,8 @@ dat.GUI.prototype.removeFolder = function(name) {
     delete this.__folders[name];
     this.onResize();
 }
+
+String.prototype.replaceAll = function(search, replacement) {
+    var target = this;
+    return target.split(search).join(replacement);
+};

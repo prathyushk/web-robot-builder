@@ -12,6 +12,32 @@ def components(filters=["actuator","mechanical"]):
         l.append(c)
     return l
 
+def getSymbolic(args):
+    name = args[0]
+    tempParams = args[1]
+    c = getComponent(name,**tempParams)
+    output = {}
+    output["variables"] = [x for x in c.getVariables()]
+    output["relations"] = c.getRelations()
+    output["defaults"] = c.defaults;
+    output["faces"] = {}
+    for i in c.getGraph().faces:
+        output["faces"][i.name] = [x.name for x in i.edges]
+    output["edges"] = {}
+    for i in c.getGraph().edges:
+        output["edges"][i.name] = i.pts3D
+    output["interfaceEdges"] = {}
+    for k,v in c.interfaces.iteritems():
+        obj = c.getInterface(k)
+        if isinstance(obj,EdgePort):
+            output["interfaceEdges"][k] = []
+            for i in obj.getEdges():
+                try:
+                    output["interfaceEdges"][k].append(i.name)
+                except:
+                    pass
+    return output
+
 def generate_stl(args):
     name = args[0]
     tempParams = args[1]
