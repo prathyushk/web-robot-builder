@@ -22,10 +22,26 @@ def getSymbolic(args):
     output["defaults"] = c.defaults;
     output["faces"] = {}
     for i in c.getGraph().faces:
-        output["faces"][i.name] = [x.name for x in i.edges]
+        tdict = i.getTriangleDict()
+        for vertex in range(len(tdict["vertices"])):
+            try:
+                tpl = tdict["vertices"][vertex]
+                tdict["vertices"][vertex] = [tpl[0],tpl[1]]
+                tdict["vertices"][vertex][0] = tdict["vertices"][vertex][0].subs(c.getVariableSubs())
+                tdict["vertices"][vertex][1] = tdict["vertices"][vertex][1].subs(c.getVariableSubs())
+            except:
+                try:
+                    tdict["vertices"][vertex][1] = tdict["vertices"][vertex][1].subs(c.getVariableSubs())
+                except:
+                    pass
+        output["faces"][i.name] = [[i.transform3D[x].subs(c.getVariableSubs()) for x in range(len(i.transform3D))], tdict]
     output["edges"] = {}
     for i in c.getGraph().edges:
-        output["edges"][i.name] = i.pts3D
+        output["edges"][i.name] = []
+        for v in range(2):
+            output["edges"][i.name].append([])
+            for x in range(3):
+                output["edges"][i.name][v].append(i.pts3D[v][x].subs(c.getVariableSubs()))
     output["interfaceEdges"] = {}
     for k,v in c.interfaces.iteritems():
         obj = c.getInterface(k)
@@ -33,7 +49,7 @@ def getSymbolic(args):
             output["interfaceEdges"][k] = []
             for i in obj.getEdges():
                 try:
-                    output["interfaceEdges"][k].append(i.name)
+                    output["interfaceEdges"][k].append(i)
                 except:
                     pass
     return output

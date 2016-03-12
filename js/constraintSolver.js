@@ -4,13 +4,60 @@ function Equation(){
     this.operator = undefined;
     this.value = undefined;
     this.derivatives = {};
+    this.functionBuild = function(funcName, op1){
+	this.op1 = op1;
+	switch(funcName){
+	case 'sqrt':
+	    this.value = Math.sqrt(op1.value);
+	    for(var v in op1.derivatives){
+		this.derivatives[v] = 0.5 * Math.pow(op1.value,-0.5) * op1.derivatives[v];
+	    }
+	    break;
+	case 'cos':
+	    this.value = Math.cos(op1.value);
+	    for(var v in op1.derivatives){
+		this.derivatives[v] = -Math.sin(op1.value) * op1.derivatives[v];
+	    }
+	    break;
+	case 'sin':
+	    this.value = Math.sin(op1.value);
+	    for(var v in op1.derivatives){
+		this.derivatives[v] = Math.cos(op1.value) * op1.derivatives[v];
+	    }
+	    break;
+	case 'tan':
+	    this.value = Math.tan(op1.value);
+	    for(var v in op1.derivatives){
+		this.derivatives[v] = 1/Math.pow(Math.cos(op1.value),2) * op1.derivatives[v];
+	    }
+	    break;
+	case 'acos':
+	    this.value = Math.acos(op1.value);
+	    for(var v in op1.derivatives){
+		this.derivatives[v] = -1./Math.sqrt((1.-Math.pow(op1.value,2))) * op1.derivatives[v];
+	    }
+	    break;
+	case 'asin':
+	    this.value = Math.asin(op1.value);
+	    for(var v in op1.derivatives){
+		this.derivatives[v] = 1./Math.sqrt((1.-Math.pow(op1.value,2))) * op1.derivatives[v];
+	    }
+	    break;
+	case 'atan':
+	    this.value = Math.atan(op1.value);
+	    for(var v in op1.derivatives){
+		this.derivatives[v] = 1./(1.+Math.pow(op1.value,2)) * op1.derivatives[v];
+	    }
+	    break;
+	}
+    }
     this.build = function(op1,op2,operator){
 	this.op1 = op1;
 	this.op2 = op2;
 	this.operator = operator;
 	switch(operator)
 	{
-	case '+':
+	    case '+':
 	    this.derivatives = op1.derivatives;
 	    for(var v in op2.derivatives){
 		if(this.derivatives[v] != undefined)
@@ -20,8 +67,8 @@ function Equation(){
 	    }
 	    this.value = op1.value + op2.value;
 	    break;
-	case '==':
-	case '-':
+	    case '==':
+	    case '-':
 	    this.derivatives = op1.derivatives;
 	    for(var v in op2.derivatives){
 		if(this.derivatives[v] != undefined)
@@ -31,7 +78,7 @@ function Equation(){
 	    }
 	    this.value = op1.value - op2.value;
 	    break;
-	case '*':
+	    case '*':
 	    for(var v in op1.derivatives){
 		var val = op2.value * op1.derivatives[v];
 		if(op2.derivatives[v] != undefined)
@@ -44,7 +91,7 @@ function Equation(){
 	    }
 	    this.value = op1.value * op2.value;
 	    break;
-	case '/':
+	    case '/':
 	    for(var v in op2.derivatives){
 		var val = -op1.value * op2.derivatives[v];
 		if(op1.derivatives[v] != undefined)
@@ -53,7 +100,7 @@ function Equation(){
 	    }
 	    this.value = op1.value / op2.value;
 	    break;
-	case '^':
+	    case '^':
 	    for(var v in op1.derivatives){
 		this.derivatives[v] = op2.value * Math.pow(op1.value,op2.value - 1) * op1.derivatives[v];
 	    }
@@ -87,12 +134,20 @@ function evalExpressionTree(tree,map){
 	curr.build(left,right,tree.op);
     }
     else if(tree.type == "SymbolNode"){
-	curr.name = tree.name;
-	curr.value = map[tree.name];
-	curr.derivatives[tree.name] = 1;
+	if(tree.name == "pi")
+	    curr.value = Math.PI;
+	else{
+	    curr.name = tree.name;
+	    curr.value = map[tree.name];
+	    curr.derivatives[tree.name] = 1;
+	}
     }
     else if(tree.type == "ConstantNode")
 	curr.value = Number(tree.value);
+    else if(tree.type == "FunctionNode"){
+	var operand = evalExpressionTree(tree.args[0],map);
+	curr.functionBuild(tree.name,operand);
+    }
     return curr;
 }
 

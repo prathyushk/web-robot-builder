@@ -12,8 +12,8 @@ var tempParams = {};
 var raycaster = new THREE.Raycaster();
 raycaster.linePrecision = 3;
 var mouse = new THREE.Vector2(),
-offset = new THREE.Vector3(),
-SELECTED_2, SELECTED;
+    offset = new THREE.Vector3(),
+    SELECTED_2, SELECTED;
 
 $("#dialog").dialog({autoOpen: false});
 componentName = ""
@@ -30,9 +30,9 @@ function splitComponent()
     delete componentObj;
     componentObj = undefined;
     while(connectedSubcomponents.length > 0){
-            scene.add(connectedSubcomponents[connectedSubcomponents.length-1]);
-            subcomponents.push(connectedSubcomponents[connectedSubcomponents.length-1]);
-            connectedSubcomponents.splice(connectedSubcomponents.length-1,1);
+	scene.add(connectedSubcomponents[connectedSubcomponents.length-1]);
+	subcomponents.push(connectedSubcomponents[connectedSubcomponents.length-1]);
+	connectedSubcomponents.splice(connectedSubcomponents.length-1,1);
     }
     document.getElementById("sComp").disabled = true;
 }
@@ -49,7 +49,7 @@ function downloadYaml(){
 
 function downloadModel(){
     if(UrlExists("models/" + componentName + "/graph-model.stl"))
-        window.open("models/" + componentName + "/graph-model.stl");
+	window.open("models/" + componentName + "/graph-model.stl");
 }
 
 function addConnection(){
@@ -81,11 +81,135 @@ function UrlExists(url)
     return http.status!=404;
 }
 
+function removeDuplicates(list){
+    for(var ele = 0; ele < list.length; ele++){
+	for(var ele2 = 0; ele2 < list.length; ele2++){
+	    if(ele != ele2 && list[ele].x == list[ele2].x && list[ele].y == list[ele2].y && list[ele].z == list[ele2].z){
+		list.splice(ele2,1);
+		ele2--;
+	    }
+	}
+    }
+}
+
+function createMeshFromObject(obj)
+{
+    var material = new THREE.MeshPhongMaterial( { color:0xffffff, shading: THREE.FlatShading } );
+    var geometry = new THREE.Geometry();
+    for(var face in obj["faces"]){
+	transf = new THREE.Matrix4();
+	obj["faces"][face][0] = obj["faces"][face][0].map(function(i){return i.replaceAll("**","^")})
+	transf.elements = obj["faces"][face][0].map(function(i){return evalExpression(i,obj["solved"]).value});
+	transf.transpose();
+	var vertices = [];
+	set = new Set();
+	var holes = [];
+	for(var v = 0, len = obj["faces"][face][1]["vertices"].length; v < len; v++){
+	    try{
+		obj["faces"][face][1]["vertices"][v] = obj["faces"][face][1]["vertices"][v].map(function(i){if(typeof i == 'string' || i instanceof String)return i.replaceAll("**","^"); else return i;});
+	    } catch (err){console.log(face + " " +v);}
+	    var arr = obj["faces"][face][1]["vertices"][v].map(function(i){return evalExpression(i,obj["solved"]).value});
+	    set.add(arr[0] + ","+arr[1]);
+	}
+	if(set.size < 3)
+	    continue;
+	var iter = set.values();
+	while(1){
+	    var element = iter.next();
+	    if(element["done"] == true)
+		break;
+	    var period = element["value"].indexOf(",");
+	    vertices.push(new THREE.Vector3(Number(element["value"].substring(0,period)),Number(element["value"].substring(period+1)),0));
+	}
+	var numverts = geometry.vertices.length;
+	console.log(transf);
+	var triangles = THREE.Shape.Utils.triangulateShape ( vertices, holes );
+	for(var v = 0, len = vertices.length; v < len; v++){
+	    var vert = new THREE.Vector4(vertices[v].x,vertices[v].y,0,1);
+	    vert.applyMatrix4(transf);
+	    console.log(vert);
+	    vertices[v].x = vert.x; vertices[v].y = vert.y; vertices[v].z = vert.z;
+	}
+	geometry.vertices = geometry.vertices.concat(vertices);
+	for(var t = 0, len = triangles.length; t < len; t++){
+	    geometry.faces.push(new THREE.Face3(triangles[t][0]+numverts, triangles[t][1]+numverts, triangles[t][2]+numverts));
+	}
+    }
+    return new THREE.Mesh( geometry, material );
+}
+
 function loadSymbolic(obj){
     for(var i = 0,len = obj["relations"].length; i < len; i++)
 	obj["relations"][i] = obj["relations"][i].replaceAll("**","^");
     nupe = obj;
-    console.log(solveSystem(obj["relations"],obj["defaults"]));
+    obj["solved"] = solveSystem(obj["relations"],obj["defaults"])[1];
+    var objMesh = createMeshFromObject(obj);
+    var n = window.prompt("Subcomponent Name","");
+    if(n == "")
+	return;
+    var joined = subcomponents.concat(connectedSubcomponents);
+    for(var iter = 0,len=joined.length; iter < len; iter++){
+	if(joined[iter].name == n){
+	    window.alert('Subcomponent with name "' + n + '" already exists');
+	    return;
+	}
+    }
+    objMesh.name = n;
+    objMesh.className = compName;
+    objMesh.interfaces = {};
+    objMesh.interfaceEdges = obj["interfaceEdges"];
+    objMesh.parameterfuncs = {};
+    subcomponents.push(objMesh);
+    for(i in objMesh.interfaceEdges){
+	for(var j = 0, len =objMesh.interfaceEdges[i].length; j < len; j++){
+	    if(objMesh.interfaceEdges[i][j] == null)
+		continue;
+	    var material = new THREE.LineBasicMaterial({
+		color: 0xff0000
+	    });
+	    var geometry = new THREE.Geometry();
+	    var k = objMesh.interfaceEdges[i][j];
+	    var p1 = [], p2 = [];
+	    for(var p = 0; p < 2; p++){
+		for(var c = 0; c < 3; c++){
+		    obj["edges"][k][p][c] = obj["edges"][k][p][c].replaceAll("**","^");
+		    if(p == 0)
+			p1.push(evalExpression(obj["edges"][k][p][c],obj["solved"]).value);
+		    else
+			p2.push(evalExpression(obj["edges"][k][p][c],obj["solved"]).value);
+		}
+	    }
+	    geometry.vertices.push(
+		new THREE.Vector3( p1[0], p1[1], p1[2] ),
+		new THREE.Vector3( p2[0], p2[1], p2[2] )
+	    );
+	    var line = new THREE.Line( geometry, material );
+	    line.name = i;
+	    objMesh.add(line);
+	}
+    }
+    comp.subcomponents[objMesh.name] = comp.subcomponents.addFolder(objMesh.name);
+    var constrs = comp.subcomponents[objMesh.name].addFolder("Constraints");
+    picoModule.getParameters(compName,function(response){
+	objMesh.parameters = response;
+	for(i in objMesh.parameters){
+	    var f = constrs.addFolder(i);
+	    if(objMesh.parameters[i] == null)
+		objMesh.parameters[i] = "";
+	    objMesh.parameterfuncs[i] = "";
+	    f.add(objMesh.parameters,i).name("Value");
+	    f.add(objMesh.parameterfuncs,i).name("Function");
+	}
+    });
+    for(i in componentLibrary[objMesh.className].interfaces){
+	objMesh.interfaces[componentLibrary[objMesh.className].interfaces[i]] = false;
+    }
+    scene.add(objMesh);
+    var ints = comp.subcomponents[objMesh.name].addFolder("Inherit Interfaces");
+    for(i in objMesh.interfaces){
+	var contr = ints.add(objMesh.interfaces,i)
+	contr.name(i);
+    }
 }
 
 function onLoadSTL(geometry){
@@ -173,12 +297,12 @@ function handleError(e){
 	    tempParams[param[i]] = parseInt(val);
 	}
 	var args = [compName,tempParams];
-        picoModule.generate_stl(args, function(response){
-            tempParams = {};
+	picoModule.generate_stl(args, function(response){
+	    tempParams = {};
 	    console.log(response);
 	    interfaceEdges = response;
-            stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);
-        });
+	    stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);
+	});
     }
     else
 	window.alert(e.exception);
@@ -203,7 +327,7 @@ function getComponents()
 				tempParams = {};
 				loadSymbolic(response);
 				/*interfaceEdges = response;
-				stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);*/
+				  stl_loader.load('models/' + compName + '/graph-model.stl',onLoadSTL);*/
 			    });
 			}
 		    }
@@ -223,11 +347,11 @@ function init(){
     renderer.setSize( container.clientWidth, container.clientHeight);
     renderer.setClearColor( 0x000000,0);
     container.appendChild( renderer.domElement );
-    
+
     scene.add( new THREE.GridHelper( 500, 100 ) );
     camera.position.set( 1000, 500, 1000 );
     camera.lookAt( new THREE.Vector3( 0, 200, 0 ) );
-    
+
     light = new THREE.DirectionalLight( 0xffffff );
     light.position.set( 1, 1, 1 );
     scene.add( light );
@@ -246,15 +370,15 @@ function init(){
     renderer.domElement.addEventListener( 'mousemove', onDocumentMouseMove, false );
     renderer.domElement.addEventListener( 'mousedown', onDocumentMouseDown, false );
     renderer.domElement.addEventListener( 'mouseup', onDocumentMouseUp, false );
-    
+
     window.addEventListener( 'resize', onWindowResize, false );
     window.addEventListener( 'keydown', onKeyDown);
 }
 
 function removeByName(array,name){
     for(var i = 0, len = array.length; i < len; i++){
-        if(array[i].name == name){
-            array.splice(i,1);
+	if(array[i].name == name){
+	    array.splice(i,1);
 	    break;
 	}
     }
@@ -263,7 +387,7 @@ function removeByName(array,name){
 function loadGui() {
     var search = {
 	Search: ""
-	  };
+    };
     var filters = {
 	Mechanical: true,
 	Electrical: true,
@@ -423,33 +547,33 @@ function buildComponent(){
 
 function onKeyDown( event ) {
     switch ( event.keyCode ) {
-/*    case 81: // Q
-	control.setSpace( control.space === "local" ? "world" : "local" );
-	break;
+	/*    case 81: // Q
+	      control.setSpace( control.space === "local" ? "world" : "local" );
+	      break;
     case 17: // Ctrl
-	control.setTranslationSnap( 100 );
-	control.setRotationSnap( THREE.Math.degToRad( 15 ) );
-	break;
+    control.setTranslationSnap( 100 );
+    control.setRotationSnap( THREE.Math.degToRad( 15 ) );
+    break;
     case 87: // W
-	control.setMode( "translate" );
-	break;
+    control.setMode( "translate" );
+    break;
     case 69: // E
-	control.setMode( "rotate" );
-	break;
+    control.setMode( "rotate" );
+    break;
     case 82: // R
-	control.setMode( "scale" );
-	break;
+    control.setMode( "scale" );
+    break;
     case 187:
     case 107: // +, =, num+
-	control.setSize( control.size + 0.1 );
-	break;
+    control.setSize( control.size + 0.1 );
+    break;
     case 189:
     case 109: // -, _, num-
-	control.setSize( Math.max( control.size - 0.1, 0.1 ) );
-	break;
+    control.setSize( Math.max( control.size - 0.1, 0.1 ) );
+    break;
     case 66: // B
-	buildComponent();
-	break;*/
+    buildComponent();
+    break;*/
     }
 }
 
@@ -461,9 +585,9 @@ function onWindowResize() {
 }
 
 function getLeftPos(el) {
-    for (var leftPos = 0; 
+    for (var leftPos = 0;
 	 el != null;
-         leftPos += el.offsetLeft, el = el.offsetParent);
+	 leftPos += el.offsetLeft, el = el.offsetParent);
     return leftPos;
 }
 
@@ -497,13 +621,13 @@ function onDocumentMouseDown( event ) {
 	obj = SELECTED_2;
     if ( intersects.length > 0 ) {
 	if(obj != undefined && obj.parent.type != "Scene")
-	    {
-		obj.material.color = new THREE.Color(0xff0000);
-		if(!event.shiftKey)
-		    SELECTED = undefined;
-		else
-		    SELECTED_2 = undefined;
-	    }
+	{
+	    obj.material.color = new THREE.Color(0xff0000);
+	    if(!event.shiftKey)
+		SELECTED = undefined;
+	    else
+		SELECTED_2 = undefined;
+	}
 	if(intersects[0].object.parent.type != "Scene"){
 	    intersects[0].object.material.color = new THREE.Color(0x00ff00);
 	    if(!event.shiftKey){
@@ -543,7 +667,7 @@ function render() {
 dat.GUI.prototype.removeFolder = function(name) {
     var folder = this.__folders[name];
     if (!folder) {
-      return;
+	return;
     }
     folder.close();
     this.__ul.removeChild(folder.domElement.parentNode);
