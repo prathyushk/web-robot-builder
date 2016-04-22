@@ -122,12 +122,10 @@ function createMeshFromObject(obj)
 	    vertices.push(new THREE.Vector3(Number(element["value"].substring(0,period)),Number(element["value"].substring(period+1)),0));
 	}
 	var numverts = geometry.vertices.length;
-	console.log(transf);
 	var triangles = THREE.Shape.Utils.triangulateShape ( vertices, holes );
 	for(var v = 0, len = vertices.length; v < len; v++){
 	    var vert = new THREE.Vector4(vertices[v].x,vertices[v].y,0,1);
 	    vert.applyMatrix4(transf);
-	    console.log(vert);
 	    vertices[v].x = vert.x; vertices[v].y = vert.y; vertices[v].z = vert.z;
 	}
 	geometry.vertices = geometry.vertices.concat(vertices);
@@ -138,11 +136,20 @@ function createMeshFromObject(obj)
     return new THREE.Mesh( geometry, material );
 }
 
+function onComponentSymbolic(obj){
+    if(componentObj)
+        scene.remove(componentObj);
+    for(var i = 0,len = obj["relations"].length; i < len; i++)
+        obj["relations"][i] = obj["relations"][i].replaceAll("**","^");
+    nupe = obj;
+    componentObj = createMeshFromObject(obj);
+    scene.add(componentObj);
+}
+
 function loadSymbolic(obj){
     for(var i = 0,len = obj["relations"].length; i < len; i++)
 	obj["relations"][i] = obj["relations"][i].replaceAll("**","^");
     nupe = obj;
-    obj["solved"] = solveSystem(obj["relations"],obj["defaults"])[1];
     var objMesh = createMeshFromObject(obj);
     var n = window.prompt("Subcomponent Name","");
     if(n == "")
@@ -536,7 +543,8 @@ function buildComponent(){
 	    connectedSubcomponents.push(subcomponents[subcomponents.length-1]);
 	    subcomponents.splice(subcomponents.length-1,1);
 	}
-	stl_loader.load('models/' + componentName + '/graph-model.stl',onComponentSTL);
+	onComponentSymbolic(response);
+	//	stl_loader.load('models/' + componentName + '/graph-model.stl',onComponentSTL);
 	document.getElementById('svg-view').src = 'models/' + componentName + '/graph-print.svg';
 	document.getElementById('dSVG').disabled = false;
 	document.getElementById('dYaml').disabled = false;
@@ -553,7 +561,7 @@ function onKeyDown( event ) {
     case 17: // Ctrl
     control.setTranslationSnap( 100 );
     control.setRotationSnap( THREE.Math.degToRad( 15 ) );
-    break;
+    break;*/
     case 87: // W
     control.setMode( "translate" );
     break;
@@ -563,7 +571,7 @@ function onKeyDown( event ) {
     case 82: // R
     control.setMode( "scale" );
     break;
-    case 187:
+    /*    case 187:
     case 107: // +, =, num+
     control.setSize( control.size + 0.1 );
     break;

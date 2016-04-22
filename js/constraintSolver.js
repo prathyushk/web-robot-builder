@@ -171,7 +171,10 @@ function step(eq, map){
     function backtrack(stepSize){
 	var newmap = {};
 	for(var key in map){
-	    newmap[key] = map[key] - stepSize*currval.derivatives[key];
+	    if(currval.derivatives[key] == undefined)
+		newmap[key] = map[key];
+	    else 
+		newmap[key] = map[key] - stepSize*currval.derivatives[key];
 	}
 	var nval = evalExpression(eq, newmap);
 	if(currval.value - nval.value >= stepSize*threshold)

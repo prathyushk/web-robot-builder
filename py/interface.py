@@ -1,7 +1,11 @@
 import pico
 from svggen.library import filterComponents, getComponent
 from svggen.api.component import Component
+from svggen.api import FoldedComponent
 from svggen.api.ports.EdgePort import *
+from sympy.utilities import lambdify
+from scipy.optimize import fmin_slsqp
+import sympy
 import json
 import ast
 
@@ -12,16 +16,31 @@ def components(filters=["actuator","mechanical"]):
         l.append(c)
     return l
 
-def getSymbolic(args):
-    name = args[0]
-    tempParams = args[1]
-    c = getComponent(name,**tempParams)
+def solveObject(c):
+    sse = 0
+    for e in c.getRelations():
+        sse += (e.lhs - e.rhs)**2
+    cvars = [x for x in c.getVariables()]
+    lambd = lambdify(cvars,sse)
+    def costfunc(x):
+        return lambd(*tuple(x))
+    defs = c.getAllDefaults()
+    defarray = []
+    for v in cvars:
+        defarray.append(defs[v.name])
+    out = fmin_slsqp(costfunc,defarray,iter=9999999)
+    solved = {}
+    for i in range(len(out)):
+        solved[cvars[i].name] = out[i]
+    return solved
+
+def extractFromComponent(c):
     output = {}
     output["variables"] = [x for x in c.getVariables()]
     output["relations"] = c.getRelations()
-    output["defaults"] = c.defaults;
+    output["defaults"] = c.getAllDefaults()
     output["faces"] = {}
-    for i in c.getGraph().faces:
+    for i in c.composables['graph'].faces:
         tdict = i.getTriangleDict()
         for vertex in range(len(tdict["vertices"])):
             try:
@@ -36,7 +55,7 @@ def getSymbolic(args):
                     pass
         output["faces"][i.name] = [[i.transform3D[x].subs(c.getVariableSubs()) for x in range(len(i.transform3D))], tdict]
     output["edges"] = {}
-    for i in c.getGraph().edges:
+    for i in c.composables['graph'].edges:
         output["edges"][i.name] = []
         for v in range(2):
             output["edges"][i.name].append([])
@@ -52,7 +71,14 @@ def getSymbolic(args):
                     output["interfaceEdges"][k].append(i)
                 except:
                     pass
+    output["solved"] = solveObject(c)
     return output
+
+def getSymbolic(args):
+    name = args[0]
+    tempParams = args[1]
+    c = getComponent(name,**tempParams)
+    return extractFromComponent(c)
 
 def generate_stl(args):
     name = args[0]
@@ -87,12 +113,13 @@ def portLookup(v,c):
     return globals()[v](c,None)
 
 def generateFromObj(obj):
-    c = Component()
-    for k,v in obj["parameters"].iteritems():
-        c.addParameter(k,eval(v))
+    #c = Component()
+    c = FoldedComponent.FoldedComponent()
+    #for k,v in obj["parameters"].iteritems():
+    #    c.addParameter(k,eval(v))
     for i in obj["subcomponents"]:
         c.addSubcomponent(i["name"],i["className"])
-        for k,v in i["parameters"].iteritems():
+        '''for k,v in i["parameters"].iteritems():
             if v == '' or v is None:
                 continue
             try:
@@ -111,7 +138,7 @@ def generateFromObj(obj):
                         else:
                             c.addConstraint((i["name"],k),v[0])
                 except:
-                    c.addConstConstraint((i["name"],k),v)
+                    c.addConstConstraint((i["name"],k),v)'''
         for k,v in i["interfaces"].iteritems():
             if(v is None):
                 continue
@@ -127,6 +154,8 @@ def generateFromObj(obj):
             if len(equalsSplit) > 1:
                 argsDict[equalsSplit[0]] = ast.literal_eval(equalsSplit[1])
         c.addConnection((int1[0],int1[1]),(int2[0],int2[1]),**argsDict)
-    c.makeOutput("/var/www/html/web-robot-builder/models/" + obj["name"],display=False,tree=False)
-    c.toYaml("/var/www/html/web-robot-builder/models/" + obj["name"] + "/"+obj["name"]+".yaml")
-    return obj["name"]
+    c.make()
+    #c.makeOutput("/var/www/html/web-robot-builder/models/" + obj["name"],display=False,tree=False)
+    #c.toYaml("/var/www/html/web-robot-builder/models/" + obj["name"] + "/"+obj["name"]+".yaml")
+    #return obj["name"]
+    return extractFromComponent(c)
