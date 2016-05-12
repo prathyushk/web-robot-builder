@@ -1,5 +1,5 @@
-var container;
-var camera, control, orbit, scene, renderer, stl_loader, gui, rightpanel, subprops, componentName;
+var container, svgcontainer;
+var camera, svgcamera, control, orbit, scene, svgscene, renderer, svgrenderer, stl_loader, gui, rightpanel, subprops, componentName;
 var subcomponents = [];
 var connectedSubcomponents = [];
 var componentObj;
@@ -133,7 +133,11 @@ function createMeshFromObject(obj)
 	    geometry.faces.push(new THREE.Face3(triangles[t][0]+numverts, triangles[t][1]+numverts, triangles[t][2]+numverts));
 	}
     }
-    return new THREE.Mesh( geometry, material );
+    var mesh = new THREE.Mesh( geometry, material );
+    mesh["solved"] = obj["solved"];
+    mesh["faces"] = obj["faces"];
+    mesh["edges"] = obj["edges"];
+    return mesh;
 }
 
 function onComponentSymbolic(obj){
@@ -142,7 +146,10 @@ function onComponentSymbolic(obj){
     for(var i = 0,len = obj["relations"].length; i < len; i++)
         obj["relations"][i] = obj["relations"][i].replaceAll("**","^");
     nupe = obj;
-    componentObj = createMeshFromObject(obj);
+    componentObj = new THREE.Object3D();
+    componentObj.type = "MasterComponent";
+    for(var i = 0, len = connectedSubcomponents.length; i < len; i++)
+	componentObj.add(connectedSubcomponents[i]);
     scene.add(componentObj);
 }
 
@@ -165,36 +172,10 @@ function loadSymbolic(obj){
     objMesh.className = compName;
     objMesh.interfaces = {};
     objMesh.interfaceEdges = obj["interfaceEdges"];
+    objMesh.connectedInterfaces = {};
     objMesh.parameterfuncs = {};
     subcomponents.push(objMesh);
-    for(i in objMesh.interfaceEdges){
-	for(var j = 0, len =objMesh.interfaceEdges[i].length; j < len; j++){
-	    if(objMesh.interfaceEdges[i][j] == null)
-		continue;
-	    var material = new THREE.LineBasicMaterial({
-		color: 0xff0000
-	    });
-	    var geometry = new THREE.Geometry();
-	    var k = objMesh.interfaceEdges[i][j];
-	    var p1 = [], p2 = [];
-	    for(var p = 0; p < 2; p++){
-		for(var c = 0; c < 3; c++){
-		    obj["edges"][k][p][c] = obj["edges"][k][p][c].replaceAll("**","^");
-		    if(p == 0)
-			p1.push(evalExpression(obj["edges"][k][p][c],obj["solved"]).value);
-		    else
-			p2.push(evalExpression(obj["edges"][k][p][c],obj["solved"]).value);
-		}
-	    }
-	    geometry.vertices.push(
-		new THREE.Vector3( p1[0], p1[1], p1[2] ),
-		new THREE.Vector3( p2[0], p2[1], p2[2] )
-	    );
-	    var line = new THREE.Line( geometry, material );
-	    line.name = i;
-	    objMesh.add(line);
-	}
-    }
+    highlightInterfaces(objMesh);
     comp.subcomponents[objMesh.name] = comp.subcomponents.addFolder(objMesh.name);
     var constrs = comp.subcomponents[objMesh.name].addFolder("Constraints");
     picoModule.getParameters(compName,function(response){
@@ -219,6 +200,41 @@ function loadSymbolic(obj){
     }
 }
 
+function highlightInterfaces(objMesh)
+{
+    for(i in objMesh.interfaceEdges){
+	if(objMesh.connectedInterfaces[i] == undefined){
+	    for(var j = 0, len =objMesh.interfaceEdges[i].length; j < len; j++){
+		if(objMesh.interfaceEdges[i][j] == null)
+		    continue;
+		var material = new THREE.LineBasicMaterial({
+			color: 0xff0000
+		    });
+		var geometry = new THREE.Geometry();
+		var k = objMesh.interfaceEdges[i][j];
+		var p1 = [], p2 = [];
+		for(var p = 0; p < 2; p++){
+		    for(var c = 0; c < 3; c++){
+			objMesh["edges"][k][p][c] = objMesh["edges"][k][p][c].replaceAll("**","^");
+			if(p == 0)
+			    p1.push(evalExpression(objMesh["edges"][k][p][c],objMesh["solved"]).value);
+			else
+			    p2.push(evalExpression(objMesh["edges"][k][p][c],objMesh["solved"]).value);
+		    }
+		}
+		geometry.vertices.push(
+				       new THREE.Vector3( p1[0], p1[1], p1[2] ),
+				       new THREE.Vector3( p2[0], p2[1], p2[2] )
+				       );
+		var line = new THREE.Line( geometry, material );
+		line.name = i;
+		objMesh.add(line);
+	    }
+	}
+    }
+
+}
+
 function onLoadSTL(geometry){
     var n = window.prompt("Subcomponent Name","");
     if(n == "")
@@ -238,18 +254,18 @@ function onLoadSTL(geometry){
     obj.interfaceEdges = interfaceEdges;
     obj.parameterfuncs = {};
     subcomponents.push(obj);
-    for(i in interfaceEdges){
+    for(i in obj.interfaceEdges){
 	for(j in interfaceEdges[i]){
 	    if(interfaceEdges[i][j] == null)
 		continue;
 	    var material = new THREE.LineBasicMaterial({
-		color: 0xff0000
-	    });
+		    color: 0xff0000
+		});
 	    var geometry = new THREE.Geometry();
 	    geometry.vertices.push(
-		new THREE.Vector3( interfaceEdges[i][j][0][0], interfaceEdges[i][j][0][1], interfaceEdges[i][j][0][2] ),
-		new THREE.Vector3( interfaceEdges[i][j][1][0], interfaceEdges[i][j][1][1], interfaceEdges[i][j][1][2] )
-	    );
+				   new THREE.Vector3( interfaceEdges[i][j][0][0], interfaceEdges[i][j][0][1], interfaceEdges[i][j][0][2] ),
+				   new THREE.Vector3( interfaceEdges[i][j][1][0], interfaceEdges[i][j][1][1], interfaceEdges[i][j][1][2] )
+				   );
 	    var line = new THREE.Line( geometry, material );
 	    line.name = i;
 	    obj.add(line);
@@ -347,18 +363,27 @@ function getComponents()
 
 function init(){
     container = document.getElementById('componentView');
+    svgcontainer = document.getElementById('svg-view');
+
     scene = new THREE.Scene();
+    svgscene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera( 75, container.clientWidth / container.clientHeight, 0.1, 100000 );
+    svgcamera = new THREE.OrthographicCamera(svgcontainer.offsetWidth / -2, svgcontainer.offsetWidth / 2, svgcontainer.offsetHeight / 2, svgcontainer.offsetHeight / -2, 1, 1000);
+
     stl_loader = new THREE.STLLoader();
     renderer = new THREE.WebGLRenderer({alpha: true, antialias: true});
     renderer.setSize( container.clientWidth, container.clientHeight);
     renderer.setClearColor( 0x000000,0);
+    svgrenderer = new THREE.WebGLRenderer({alpha:true,antialias: true});
+    svgrenderer.setSize(svgcontainer.clientWidth,svgcontainer.clientHeight);
+    svgrenderer.setClearColor(0x000000,0);
     container.appendChild( renderer.domElement );
-
+    svgcontainer.appendChild(svgrenderer.domElement);
     scene.add( new THREE.GridHelper( 500, 100 ) );
     camera.position.set( 1000, 500, 1000 );
     camera.lookAt( new THREE.Vector3( 0, 200, 0 ) );
-
+    svgcamera.position.set(0,1000,0);
+    svgcamera.lookAt(new THREE.Vector3(0,0,0));
     light = new THREE.DirectionalLight( 0xffffff );
     light.position.set( 1, 1, 1 );
     scene.add( light );
@@ -456,6 +481,8 @@ function loadGui() {
 		newConn.interface1 = SELECTED.parent.name + "." + SELECTED.name;
 		newConn.interface2 = SELECTED_2.parent.name + "." + SELECTED_2.name;
 		connections.push(newConn);
+		SELECTED.parent.connectedInterfaces[SELECTED.name] = newConn.interface2;
+		SELECTED_2.parent.connectedInterfaces[SELECTED_2.name] = newConn.interface1;
 		var folder = comp.connections.addFolder(newConn.name);
 		newConn.args = "";
 		folder.add(newConn,"interface2").name(newConn.interface1);
@@ -525,6 +552,40 @@ function stripObjects(list, strippedList){
     }
 }
 
+function updateComponent(component, solution)
+{
+    var pos = {};
+    var quat = {};
+    for(var k in component["solved"]){
+	if(k == "dx" || k == "dy" || k == "dz"){
+	    pos[k] = solution[component.name + "_" + k];
+	    component["solved"][k] = 0;
+	}
+	else if(k == "q_a" || k == "q_i" || k == "q_j" || k == "q_k"){
+	    quat[k] = solution[component.name + "_" + k];
+	    if(k == "q_a")
+		component["solved"][k] = 1;
+	    else
+		component["solved"][k] = 0;
+	}
+	else
+	    component["solved"][k] = solution[component.name + "_" + k];
+    }
+    console.log(pos);
+    console.log(quat);
+    newComp = createMeshFromObject(component);
+    newComp.position.set(Number(pos.dx),Number(pos.dy),Number(pos.dz));
+    newComp.rotation.setFromQuaternion(new THREE.Quaternion(Number(quat.q_i),Number(quat.q_j),Number(quat.q_k),Number(quat.q_a)));
+    newComp.name = component.name;
+    newComp.className = component.className;
+    newComp.interfaces = component.interfaces;
+    newComp.interfaceEdges = component.interfaceEdges;
+    newComp.connectedInterfaces = component.connectedInterfaces;
+    newComp.parameterfuncs = component.parameterFuncs;
+    highlightInterfaces(newComp);
+    return newComp;
+}
+
 function buildComponent(){
     var thisComponent = {};
     thisComponent.name = componentName;
@@ -538,14 +599,17 @@ function buildComponent(){
 	    control.detach(SELECTED);
 	    SELECTED = undefined;
 	}
+	for(var i = 0, len = connectedSubcomponents.length;i < len; i++)
+	    connectedSubcomponents[i] = updateComponent(connectedSubcomponents[i],response["solved"]);
 	while(subcomponents.length > 0){
 	    scene.remove(subcomponents[subcomponents.length-1]);
+	    subcomponents[subcomponents.length-1] = updateComponent(subcomponents[subcomponents.length-1],response["solved"]);
 	    connectedSubcomponents.push(subcomponents[subcomponents.length-1]);
 	    subcomponents.splice(subcomponents.length-1,1);
 	}
 	onComponentSymbolic(response);
 	//	stl_loader.load('models/' + componentName + '/graph-model.stl',onComponentSTL);
-	document.getElementById('svg-view').src = 'models/' + componentName + '/graph-print.svg';
+	//	document.getElementById('svg-view').src = 'models/' + componentName + '/graph-print.svg';
 	document.getElementById('dSVG').disabled = false;
 	document.getElementById('dYaml').disabled = false;
 	document.getElementById('dModel').disabled = false;
@@ -636,7 +700,15 @@ function onDocumentMouseDown( event ) {
 	    else
 		SELECTED_2 = undefined;
 	}
-	if(intersects[0].object.parent.type != "Scene"){
+	if(intersects[0].object.parent.type == "MasterComponent")
+	    {
+		if(!event.shiftKey)
+		    {
+			SELECTED = intersects[0].object.parent;
+			control.attach(SELECTED);
+		    }
+	    }
+	else if(intersects[0].object.parent.type != "Scene"){
 	    intersects[0].object.material.color = new THREE.Color(0x00ff00);
 	    if(!event.shiftKey){
 		if(SELECTED != undefined && SELECTED.parent.type == "Scene")
@@ -655,8 +727,8 @@ function onDocumentMouseDown( event ) {
 		comp.subcomponents[SELECTED.name].close();
 	    if(SELECTED != componentObj)
 		comp.subcomponents[intersects[0].object.name].open();
-	    var string = "models/" + intersects[0].object.className + "/graph-print.svg";
-	    document.getElementById('svg-view').src = string;
+	    //	    var string = "models/" + intersects[0].object.className + "/graph-print.svg";
+	    //	    document.getElementById('svg-view').src = string;
 	    SELECTED = intersects[0].object;
 	}
     }
