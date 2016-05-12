@@ -3,8 +3,10 @@ from svggen.library import filterComponents, getComponent
 from svggen.api.component import Component
 from svggen.api import FoldedComponent
 from svggen.api.ports.EdgePort import *
-from sympy.utilities import lambdify
-from scipy.optimize import fmin_slsqp
+from svggen.utils import mymath as np
+from svggen.utils.transforms import InverseQuat, MultiplyQuat, NormalizeQuat
+from sympy_interop import *
+import casadi
 import sympy
 import json
 import ast
@@ -18,21 +20,75 @@ def components(filters=["actuator","mechanical"]):
 
 def solveObject(c):
     sse = 0
-    for e in c.getRelations():
-        sse += (e.lhs - e.rhs)**2
-    cvars = [x for x in c.getVariables()]
-    lambd = lambdify(cvars,sse)
-    def costfunc(x):
-        return lambd(*tuple(x))
-    defs = c.getAllDefaults()
-    defarray = []
-    for v in cvars:
-        defarray.append(defs[v.name])
-    out = fmin_slsqp(costfunc,defarray,iter=9999999)
-    solved = {}
-    for i in range(len(out)):
-        solved[cvars[i].name] = out[i]
-    return solved
+    relations = c.getRelations()
+    quatConstr = relations[:len(c.subcomponents)+1]
+    relations = relations[len(c.subcomponents)+1:]
+    if len(relations) > 0:
+        for e in relations:
+            sse += (e.lhs - e.rhs)**2
+        cvars = [x for x in c.getVariables()]
+        defs = c.getAllDefaults()
+        varord = {}
+        defarray = []
+        i = 0
+        for v in cvars:
+            varord[v.name] = casadi.SX.sym(v.name)
+            i += 1
+            defarray.append(defs[v.name])
+        SXsse = sympy2casadi(sse,varord)
+        SXsse += (varord["r1_w"]-400)**2
+        SXsse += (varord["r1_l"]-100)**2
+        SXsse += (varord["r2_w"]-400)**2
+        SXsse += (varord["r2_l"]-100)**2
+        consts = [sympy2casadi(q.lhs-q.rhs,varord) for q in quatConstr]
+        #consts = consts + [varord["r1_w"],varord["r1_l"],varord["r2_w"],varord["r2_l"]]
+        print len(consts)
+        nlp = {'x':casadi.vertcat(*varord.values()),'f':SXsse,'g':casadi.vertcat(*consts)}
+        solver = casadi.nlpsol('nlp','ipopt',nlp,{'ipopt':{'max_iter':2147483647}})
+        low = [0]*(len(consts))# + [100,400,100,400]
+        up = [0]*(len(consts))# + [100,400,100,400]
+        sol = solver(x0=defarray,lbg=low,ubg=up)
+        print SXsse
+        out = sol['x']
+        solved = {}
+        kys = varord.keys()
+        for i in range(len(kys)):
+            solved[kys[i]] = float(out[i])
+        if len(c.subcomponents.values()) > 0:
+            ref = c.subcomponents.keys()[0] + "_"
+            dx = solved[ref + "dx"]
+            dy = solved[ref + "dy"]
+            dz = solved[ref + "dz"]
+            quat = (solved[ref + "q_a"],solved[ref + "q_i"],solved[ref + "q_j"],solved[ref + "q_k"])
+            invQuat = InverseQuat(quat)
+            transformed = []
+            for k,v in solved.iteritems():
+                if "dx" in k:
+                    solved[k] -= dx
+                elif "dy" in k:
+                    solved[k] -= dy
+                elif "dz" in k:
+                    solved[k] -= dz
+            for k,v in solved.iteritems():
+                if "q_" in k:
+                    pref = k[:k.index("q_")]
+                    if pref in transformed:
+                        continue
+                    q = (solved[pref+"q_a"],solved[pref+"q_i"],solved[pref+"q_j"],solved[pref+"q_k"])
+                    p = (0,solved[pref+"dx"],solved[pref+"dy"],solved[pref+"dz"])
+                    newQ = MultiplyQuat(invQuat,q)
+                    newP = MultiplyQuat(p,quat)
+                    newP = MultiplyQuat(invQuat,newP)
+                    solved[pref+"q_a"],solved[pref+"q_i"],solved[pref+"q_j"],solved[pref+"q_k"] = newQ
+                    z,solved[pref+"dx"],solved[pref+"dy"],solved[pref+"dz"] = newP
+                    transformed.append(pref)
+
+            solved["dx"],solved["dy"],solved["dz"] = 0,0,0
+            solved["q_a"],solved["q_i"],solved["q_j"],solved["q_k"] = 1,0,0,0
+            return solved
+    else:
+        return c.getAllDefaults()
+
 
 def extractFromComponent(c):
     output = {}
@@ -55,12 +111,17 @@ def extractFromComponent(c):
                     pass
         output["faces"][i.name] = [[i.transform3D[x].subs(c.getVariableSubs()) for x in range(len(i.transform3D))], tdict]
     output["edges"] = {}
+    output["edges2D"] = {}
     for i in c.composables['graph'].edges:
         output["edges"][i.name] = []
+        output["edges2D"][i.name] = []
         for v in range(2):
             output["edges"][i.name].append([])
+            output["edges2D"][i.name].append([])
             for x in range(3):
                 output["edges"][i.name][v].append(i.pts3D[v][x].subs(c.getVariableSubs()))
+                if x != 2:
+                    output["edges2D"][i.name][v].append(i.pts2D[v][x].subs(c.getVariableSubs()))
     output["interfaceEdges"] = {}
     for k,v in c.interfaces.iteritems():
         obj = c.getInterface(k)
@@ -72,6 +133,7 @@ def extractFromComponent(c):
                 except:
                     pass
     output["solved"] = solveObject(c)
+    print output["solved"]
     return output
 
 def getSymbolic(args):
