@@ -1,10 +1,9 @@
 import pico
+from octaveInterface import createOctaveScriptObj
 from svggen.library import filterComponents, getComponent
 from svggen.api.component import Component
 from svggen.api import FoldedComponent
 from svggen.api.ports.EdgePort import *
-from sympy.utilities import lambdify
-from scipy.optimize import fmin_slsqp
 import sympy
 import json
 import ast
@@ -17,22 +16,10 @@ def components(filters=["actuator","mechanical"]):
     return l
 
 def solveObject(c):
-    sse = 0
-    for e in c.getRelations():
-        sse += (e.lhs - e.rhs)**2
-    cvars = [x for x in c.getVariables()]
-    lambd = lambdify(cvars,sse)
-    def costfunc(x):
-        return lambd(*tuple(x))
-    defs = c.getAllDefaults()
-    defarray = []
-    for v in cvars:
-        defarray.append(defs[v.name])
-    out = fmin_slsqp(costfunc,defarray,iter=9999999)
-    solved = {}
-    for i in range(len(out)):
-        solved[cvars[i].name] = out[i]
-    return solved
+    if len(c.subcomponents) > 0:
+        relations = c.getRelations()
+        return createOctaveScriptObj(relations[len(c.subcomponents)+1:],c.getAllDefaults(),relations[:len(c.subcomponents)+1])
+    return c.getAllDefaults()
 
 def extractFromComponent(c):
     output = {}
