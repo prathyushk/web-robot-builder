@@ -4,6 +4,7 @@ from svggen.library import filterComponents, getComponent
 from svggen.api.component import Component
 from svggen.api import FoldedComponent
 from svggen.api.ports.EdgePort import *
+from svggen.utils.transforms import InverseQuat, MultiplyQuat, NormalizeQuat
 import sympy
 import json
 import ast
@@ -18,7 +19,42 @@ def components(filters=["actuator","mechanical"]):
 def solveObject(c):
     if len(c.subcomponents) > 0:
         relations = c.getRelations()
-        return createOctaveScriptObj(relations[len(c.subcomponents)+1:],c.getAllDefaults(),relations[:len(c.subcomponents)+1])
+#        invv = {v[0]: v[1] for v in c.allParameters.values()}
+        #relations.append(sympy.Eq(invv["r1_l"],100))
+        #relations.append(sympy.Eq(invv["r1_w"],400))
+        #relations.append(sympy.Eq(invv["r2_l"],100))
+        #relations.append(sympy.Eq(invv["r2_w"],400))
+        solved = createOctaveScriptObj(relations,c.getAllDefaults(),c.getAllConstraints())
+        ref = c.subcomponents.keys()[0] + "_"
+        dx = solved[ref + "dx"]
+        dy = solved[ref + "dy"]
+        dz = solved[ref + "dz"]
+        quat = (solved[ref + "q_a"],solved[ref + "q_i"],solved[ref + "q_j"],solved[ref + "q_k"])
+        invQuat = InverseQuat(quat)
+        transformed = []
+        for k,v in solved.iteritems():
+            if "dx" in k:
+                solved[k] -= dx
+            elif "dy" in k:
+                solved[k] -= dy
+            elif "dz" in k:
+                solved[k] -= dz
+        for k,v in solved.iteritems():
+            if "q_" in k:
+                pref = k[:k.index("q_")]
+                if pref in transformed:
+                    continue
+                q = (solved[pref+"q_a"],solved[pref+"q_i"],solved[pref+"q_j"],solved[pref+"q_k"])
+                p = (0,solved[pref+"dx"],solved[pref+"dy"],solved[pref+"dz"])
+                newQ = MultiplyQuat(invQuat,q)
+                newP = MultiplyQuat(p,quat)
+                newP = MultiplyQuat(invQuat,newP)
+                solved[pref+"q_a"],solved[pref+"q_i"],solved[pref+"q_j"],solved[pref+"q_k"] = newQ
+                z,solved[pref+"dx"],solved[pref+"dy"],solved[pref+"dz"] = newP
+                transformed.append(pref)
+        solved["dx"],solved["dy"],solved["dz"] = 0,0,0
+        solved["q_a"],solved["q_i"],solved["q_j"],solved["q_k"] = 1,0,0,0
+        return solved
     return c.getAllDefaults()
 
 def extractFromComponent(c):
