@@ -16,52 +16,11 @@ def components(filters=["actuator","mechanical"]):
         l.append(c)
     return l
 
-def solveObject(c):
-    if len(c.subcomponents) > 0:
-        relations = c.getRelations()
-#        invv = {v[0]: v[1] for v in c.allParameters.values()}
-        #relations.append(sympy.Eq(invv["r1_l"],100))
-        #relations.append(sympy.Eq(invv["r1_w"],400))
-        #relations.append(sympy.Eq(invv["r2_l"],100))
-        #relations.append(sympy.Eq(invv["r2_w"],400))
-        solved = createOctaveScriptObj(relations,c.getAllDefaults(),c.getAllConstraints())
-        ref = c.subcomponents.keys()[0] + "_"
-        dx = solved[ref + "dx"]
-        dy = solved[ref + "dy"]
-        dz = solved[ref + "dz"]
-        quat = (solved[ref + "q_a"],solved[ref + "q_i"],solved[ref + "q_j"],solved[ref + "q_k"])
-        invQuat = InverseQuat(quat)
-        transformed = []
-        for k,v in solved.iteritems():
-            if "dx" in k:
-                solved[k] -= dx
-            elif "dy" in k:
-                solved[k] -= dy
-            elif "dz" in k:
-                solved[k] -= dz
-        for k,v in solved.iteritems():
-            if "q_" in k:
-                pref = k[:k.index("q_")]
-                if pref in transformed:
-                    continue
-                q = (solved[pref+"q_a"],solved[pref+"q_i"],solved[pref+"q_j"],solved[pref+"q_k"])
-                p = (0,solved[pref+"dx"],solved[pref+"dy"],solved[pref+"dz"])
-                newQ = MultiplyQuat(invQuat,q)
-                newP = MultiplyQuat(p,quat)
-                newP = MultiplyQuat(invQuat,newP)
-                solved[pref+"q_a"],solved[pref+"q_i"],solved[pref+"q_j"],solved[pref+"q_k"] = newQ
-                z,solved[pref+"dx"],solved[pref+"dy"],solved[pref+"dz"] = newP
-                transformed.append(pref)
-        solved["dx"],solved["dy"],solved["dz"] = 0,0,0
-        solved["q_a"],solved["q_i"],solved["q_j"],solved["q_k"] = 1,0,0,0
-        return solved
-    return c.getAllDefaults()
-
 def extractFromComponent(c):
     output = {}
     output["variables"] = [x for x in c.getVariables()]
     output["relations"] = c.getRelations()
-    output["defaults"] = c.getAllDefaults()
+    output["solved"] = c.getAllDefaults()
     output["faces"] = {}
     for i in c.composables['graph'].faces:
         tdict = i.getTriangleDict()
@@ -94,7 +53,6 @@ def extractFromComponent(c):
                     output["interfaceEdges"][k].append(i)
                 except:
                     pass
-    output["solved"] = solveObject(c)
     return output
 
 def getSymbolic(args):
